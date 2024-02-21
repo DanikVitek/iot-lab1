@@ -5,6 +5,7 @@ use color_eyre::{
     eyre::{bail, OptionExt},
     Result,
 };
+use tokio_stream::StreamExt;
 
 use crate::{
     domain::{Accelerometer, AggregatedData, Gps},
@@ -18,14 +19,20 @@ pub struct FileDatasource<State> {
 }
 
 pub mod state {
-    use std::{fs::File, io::BufReader};
+    use csv_async::AsyncReader;
 
     pub struct New;
     pub struct Reading {
-        pub accelerometer_reader: csv::Reader<BufReader<File>>,
+        pub accelerometer_reader: csv::Reader<std::io::BufReader<std::fs::File>>,
         pub accelerometer_reader_start: Option<csv::Position>,
-        pub gps_reader: csv::Reader<BufReader<File>>,
+        pub gps_reader: csv::Reader<std::io::BufReader<std::fs::File>>,
         pub gps_reader_start: Option<csv::Position>,
+    }
+    pub struct ReadingAsync {
+        pub accelerometer_reader: AsyncReader<tokio::io::BufReader<tokio::fs::File>>,
+        pub gps_reader: AsyncReader<tokio::io::BufReader<tokio::fs::File>>,
+        pub accelerometer_reader_start: Option<()>,
+        pub gps_reader_start: Option<()>,
     }
 }
 
@@ -60,6 +67,31 @@ impl FileDatasource<state::New> {
             csv::Reader::from_reader(BufReader::new(File::open(gps_filename.as_ref())?));
         Ok(FileDatasource {
             state: state::Reading {
+                accelerometer_reader,
+                gps_reader,
+                accelerometer_reader_start: None,
+                gps_reader_start: None,
+            },
+            accelerometer_filename,
+            gps_filename,
+        })
+    }
+
+    pub async fn start_reading_async(self) -> Result<FileDatasource<state::ReadingAsync>> {
+        let Self {
+            accelerometer_filename,
+            gps_filename,
+            ..
+        } = self;
+
+        let accelerometer_reader = csv_async::AsyncReader::from_reader(tokio::io::BufReader::new(
+            tokio::fs::File::open(accelerometer_filename.as_ref()).await?,
+        ));
+        let gps_reader = csv_async::AsyncReader::from_reader(tokio::io::BufReader::new(
+            tokio::fs::File::open(gps_filename.as_ref()).await?,
+        ));
+        Ok(FileDatasource {
+            state: state::ReadingAsync {
                 accelerometer_reader,
                 gps_reader,
                 accelerometer_reader_start: None,
@@ -135,6 +167,73 @@ impl FileDatasource<state::Reading> {
                             .clone()
                             .ok_or_eyre("gps data file is empty")?,
                     )?;
+
+                    continue;
+                }
+            };
+        }
+    }
+
+    pub fn stop_reading(self) -> FileDatasource<state::New> {
+        FileDatasource::_new(self.accelerometer_filename, self.gps_filename)
+    }
+}
+
+impl FileDatasource<state::ReadingAsync> {
+    pub async fn read(&mut self) -> Result<AggregatedData> {
+        let Self {
+            state:
+                state::ReadingAsync {
+                    accelerometer_reader,
+                    gps_reader,
+                    accelerometer_reader_start,
+                    gps_reader_start,
+                },
+            ..
+        } = self;
+
+        loop {
+            let accelerometer: Option<_> = accelerometer_reader
+                .records()
+                .also(|_| {
+                    if accelerometer_reader_start.is_none() {
+                        *accelerometer_reader_start = Some(());
+                    }
+                })
+                .next()
+                .await
+                .transpose()?;
+            let gps: Option<_> = gps_reader
+                .records()
+                .also(|_| {
+                    if gps_reader_start.is_none() {
+                        *gps_reader_start = Some(());
+                    }
+                })
+                .next()
+                .await
+                .transpose()?;
+
+            return match accelerometer.zip(gps) {
+                Some((accelerometer, gps)) => Ok(AggregatedData::new(
+                    accelerometer.deserialize(
+                        accelerometer_reader
+                            .headers()
+                            .await?
+                            .take_if(|it| !it.is_empty()),
+                    )?,
+                    gps.deserialize(gps_reader.headers().await?.take_if(|it| !it.is_empty()))?,
+                    Utc::now(),
+                )),
+                None => {
+                    tracing::debug!("Seeking to the beginning of the files");
+                    if accelerometer_reader_start.is_none() || gps_reader_start.is_none() {
+                        bail!("Unable to seek to the beginning of the files: start positions are not set")
+                    }
+
+                    accelerometer_reader.rewind().await?;
+
+                    gps_reader.rewind().await?;
 
                     continue;
                 }

@@ -33,12 +33,12 @@ async fn publish(
     delay: Duration,
 ) -> Result<()> {
     let mut interval = tokio::time::interval(delay);
-    let mut datasource = datasource.start_reading()?;
+    let mut datasource = datasource.start_reading_async().await?;
 
     tracing::info!("Reading data from the datasource");
     loop {
         interval.tick().await;
-        let data: AggregatedData = match datasource.read() {
+        let data: AggregatedData = match datasource.read().await {
             Ok(data) => data,
             Err(err) => {
                 tracing::error!("Failed to read data from the datasource: {}", err);
