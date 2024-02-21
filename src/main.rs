@@ -35,23 +35,39 @@ async fn publish(
     let mut interval = tokio::time::interval(delay);
     let mut datasource = datasource.start_reading_async().await?;
 
-    tracing::info!("Reading data from the datasource");
-    loop {
-        interval.tick().await;
-        let data: AggregatedData = match datasource.read().await {
-            Ok(data) => data,
-            Err(err) => {
-                tracing::error!("Failed to read data from the datasource: {}", err);
-                continue;
+    let (data_reader_sender, mut data_reader_receiver) =
+        tokio::sync::mpsc::channel::<AggregatedData>(7);
+
+    tokio::spawn(async move {
+        loop {
+            let data: AggregatedData = match datasource.read().await {
+                Ok(data) => data,
+                Err(err) => {
+                    tracing::error!("Failed to read data from the datasource: {}", err);
+                    continue;
+                }
+            };
+            tracing::debug!("Sending data to the broker: {data:#?}");
+            if let Err(err) = data_reader_sender.send(data).await {
+                tracing::error!("Failed to send data to the receiver: {}", err);
             }
-        };
+        }
+    });
+
+    tracing::info!("Reading data from the datasource");
+    while let Some(data) = data_reader_receiver.recv().await {
         tracing::debug!("Sending data to the broker: {data:#?}");
         let message = mqtt::Message::new(topic, serde_json::to_vec(&data)?, 0);
         if let Err(err) = client.publish(message).await {
             tracing::error!("Failed to send message to topic {topic}: {err}")
-        };
-        tracing::info!("Data sent to the broker");
+        } else {
+            tracing::info!("Data sent to the broker");
+        }
+        interval.tick().await;
     }
+    tracing::info!("No more data");
+
+    Ok(())
 }
 
 #[instrument(skip(config))]
