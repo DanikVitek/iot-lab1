@@ -1,0 +1,28 @@
+[package]
+name = "lab1"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+strip = true
+
+[dependencies]
+color-eyre = "0.6.2"
+config = { version = "0.14.0", default-features = false, features = ["toml"] }
+csv = "1.3.0"
+paho-mqtt = "0.12.3"
+serde = { version = "1.0.197", features = ["derive", "rc"] }
+serde_json = "1.0.114"
+tokio = { version = "1.36.0", features = ["full"] }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+
+[dependencies.chrono]
+version = "0.4.34"
+default-features = false
+features = ["serde", "now", "windows-targets", "winapi"]

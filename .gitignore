@@ -1,0 +1,5 @@
+/.vscode
+/target
+/configuration/production.toml
+/docker/mosquitto/data
+/docker/mosquitto/log
