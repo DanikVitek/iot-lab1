@@ -1,9 +1,15 @@
-use std::{borrow::Cow, fs::File};
+use std::{borrow::Cow, fs::File, io::BufReader};
 
 use chrono::Utc;
-use color_eyre::Result;
+use color_eyre::{
+    eyre::{bail, OptionExt},
+    Result,
+};
 
-use crate::domain::{Accelerometer, AggregatedData, Gps};
+use crate::{
+    domain::{Accelerometer, AggregatedData, Gps},
+    KtConvenience,
+};
 
 pub struct FileDatasource<State> {
     accelerometer_filename: Cow<'static, str>,
@@ -12,12 +18,14 @@ pub struct FileDatasource<State> {
 }
 
 pub mod state {
-    use std::fs::File;
+    use std::{fs::File, io::BufReader};
 
     pub struct New;
     pub struct Reading {
-        pub accelerometer_reader: csv::Reader<File>,
-        pub gps_reader: csv::Reader<File>,
+        pub accelerometer_reader: csv::Reader<BufReader<File>>,
+        pub accelerometer_reader_start: Option<csv::Position>,
+        pub gps_reader: csv::Reader<BufReader<File>>,
+        pub gps_reader_start: Option<csv::Position>,
     }
 }
 
@@ -46,12 +54,16 @@ impl FileDatasource<state::New> {
             ..
         } = self;
 
+        let accelerometer_reader =
+            csv::Reader::from_reader(BufReader::new(File::open(accelerometer_filename.as_ref())?));
+        let gps_reader =
+            csv::Reader::from_reader(BufReader::new(File::open(gps_filename.as_ref())?));
         Ok(FileDatasource {
             state: state::Reading {
-                accelerometer_reader: csv::Reader::from_reader(File::open(
-                    &*accelerometer_filename,
-                )?),
-                gps_reader: csv::Reader::from_reader(File::open(&*gps_filename)?),
+                accelerometer_reader,
+                gps_reader,
+                accelerometer_reader_start: None,
+                gps_reader_start: None,
             },
             accelerometer_filename,
             gps_filename,
@@ -60,24 +72,74 @@ impl FileDatasource<state::New> {
 }
 
 impl FileDatasource<state::Reading> {
-    pub fn read(&mut self) -> Result<Option<AggregatedData>> {
+    pub fn read(&mut self) -> Result<AggregatedData> {
         let Self {
             state:
                 state::Reading {
                     accelerometer_reader,
                     gps_reader,
+                    accelerometer_reader_start,
+                    gps_reader_start,
                 },
             ..
         } = self;
 
-        let accelerometer: Option<Accelerometer> =
-            accelerometer_reader.deserialize().next().transpose()?;
-        let gps: Option<Gps> = gps_reader.deserialize().next().transpose()?;
+        loop {
+            let accelerometer: Option<_> = accelerometer_reader
+                .deserialize::<Accelerometer>()
+                .also(|iter| {
+                    if accelerometer_reader_start.is_none() {
+                        *accelerometer_reader_start = Some(iter.reader().position().clone());
+                    }
+                })
+                .next()
+                .transpose()?
+                .also(|v| {
+                    if v.is_none() {
+                        *accelerometer_reader_start = None;
+                    }
+                });
+            let gps: Option<_> = gps_reader
+                .deserialize::<Gps>()
+                .also(|iter| {
+                    if gps_reader_start.is_none() {
+                        *gps_reader_start = Some(iter.reader().position().clone());
+                    }
+                })
+                .next()
+                .transpose()?
+                .also(|v| {
+                    if v.is_none() {
+                        *gps_reader_start = None;
+                    }
+                });
 
-        let aggregated = accelerometer.zip(gps);
+            return match accelerometer.zip(gps) {
+                Some((accelerometer, gps)) => {
+                    Ok(AggregatedData::new(accelerometer, gps, Utc::now()))
+                }
+                None => {
+                    tracing::debug!("Seeking to the beginning of the files");
+                    if accelerometer_reader_start.is_none() || gps_reader_start.is_none() {
+                        bail!("Unable to seek to the beginning of the files: start positions are not set")
+                    }
 
-        Ok(aggregated
-            .map(|(accelerometer, gps)| AggregatedData::new(accelerometer, gps, Utc::now())))
+                    accelerometer_reader.seek(
+                        accelerometer_reader_start
+                            .clone()
+                            .ok_or_eyre("accelerometer data file is empty")?,
+                    )?;
+
+                    gps_reader.seek(
+                        gps_reader_start
+                            .clone()
+                            .ok_or_eyre("gps data file is empty")?,
+                    )?;
+
+                    continue;
+                }
+            };
+        }
     }
 
     pub fn stop_reading(self) -> FileDatasource<state::New> {

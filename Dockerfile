@@ -23,6 +23,4 @@ RUN apt-get update -y \
 COPY --from=builder /app/target/release/lab1 lab1
 COPY configuration configuration
 COPY data data
-ENV RUST_BACKTRACE=1
-ENV RUST_LOG=DEBUG
 ENTRYPOINT [ "./lab1" ]

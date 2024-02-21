@@ -3,6 +3,7 @@ use std::time::Duration;
 use color_eyre::Result;
 use lab1::{
     config::{self, Configuration},
+    domain::AggregatedData,
     file_datasource::{state, FileDatasource},
     reclone,
 };
@@ -33,14 +34,12 @@ async fn publish(
 ) -> Result<()> {
     let mut interval = tokio::time::interval(delay);
     let mut datasource = datasource.start_reading()?;
+
+    tracing::info!("Reading data from the datasource");
     loop {
         interval.tick().await;
-        let data = match datasource.read() {
-            Ok(Some(data)) => data,
-            Ok(None) => {
-                tracing::info!("End of the file");
-                return Ok(());
-            }
+        let data: AggregatedData = match datasource.read() {
+            Ok(data) => data,
             Err(err) => {
                 tracing::error!("Failed to read data from the datasource: {}", err);
                 continue;

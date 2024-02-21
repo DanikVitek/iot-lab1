@@ -21,6 +21,8 @@ services:
       - mqtt
     environment:
       APP_ENVIRONMENT: production
+      RUST_BACKTRACE: 1
+      RUST_LOG: INFO
     networks:
       mqtt_network:
 
