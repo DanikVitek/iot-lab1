@@ -1,3 +1,5 @@
+use tracing_appender::rolling::RollingFileAppender;
+
 pub mod config;
 pub mod domain;
 pub mod file_datasource;
@@ -44,5 +46,29 @@ macro_rules! reclone {
         $(
             let $v = $v.clone();
         )+
+    }
+}
+
+pub struct FileStdoutWriter {
+    file: RollingFileAppender,
+}
+
+impl FileStdoutWriter {
+    pub fn new(file: RollingFileAppender) -> Self {
+        Self { file }
+    }
+}
+
+impl std::io::Write for FileStdoutWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let buf_len = buf.len();
+        std::io::stdout().write(buf)?;
+        self.file.write(buf)?;
+        Ok(buf_len)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::stdout().flush()?;
+        self.file.flush()
     }
 }

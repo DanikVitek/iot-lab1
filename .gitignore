@@ -3,3 +3,4 @@
 /configuration/production.toml
 /docker/mosquitto/data
 /docker/mosquitto/log
+/docker/agent/log

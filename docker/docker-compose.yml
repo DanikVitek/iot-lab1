@@ -19,10 +19,12 @@ services:
     build: ../
     depends_on:
       - mqtt
+    volumes:
+      - ./agent/log:/app/log
     environment:
       APP_ENVIRONMENT: production
       RUST_BACKTRACE: 1
-      RUST_LOG: INFO
+      RUST_LOG: DEBUG
     networks:
       mqtt_network:
 
