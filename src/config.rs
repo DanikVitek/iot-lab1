@@ -6,14 +6,14 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct Configuration {
     mqtt: Mqtt,
-    delay: Option<f64>,
+    delay: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Mqtt {
-    brocker_host: Option<Arc<str>>,
-    brocker_port: Option<u16>,
-    topic: Option<Arc<str>>,
+    brocker_host: Arc<str>,
+    brocker_port: u16,
+    topic: Arc<str>,
 }
 
 impl Configuration {
@@ -40,23 +40,21 @@ impl Configuration {
     }
 
     pub fn delay(&self) -> Duration {
-        self.delay
-            .map(Duration::from_secs_f64)
-            .unwrap_or(Duration::from_secs(1))
+        Duration::from_secs_f64(self.delay)
     }
 }
 
 impl Mqtt {
     pub fn brocker_host(&self) -> &str {
-        self.brocker_host.as_deref().unwrap_or("mqtt")
+        &self.brocker_host
     }
 
     pub fn brocker_port(&self) -> u16 {
-        self.brocker_port.unwrap_or(1883)
+        self.brocker_port
     }
 
     pub fn topic(&self) -> &str {
-        self.topic.as_deref().unwrap_or("agent")
+        &self.topic
     }
 }
 
