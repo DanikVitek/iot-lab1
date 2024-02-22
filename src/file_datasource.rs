@@ -5,6 +5,7 @@ use color_eyre::{
     eyre::{bail, OptionExt},
     Result,
 };
+use tokio::{fs::File as AsyncFile, io::BufReader as AsyncBufReader};
 use tokio_stream::StreamExt;
 
 use crate::{
@@ -18,21 +19,29 @@ pub struct FileDatasource<State> {
     state: State,
 }
 
+/// States of the file data source state machine
 pub mod state {
+    use super::*;
+
     use csv_async::AsyncReader;
 
+    /// Initial state of the file data source
     pub struct New;
+
+    /// Sync reading state of the file data source
     pub struct Reading {
-        pub accelerometer_reader: csv::Reader<std::io::BufReader<std::fs::File>>,
+        pub accelerometer_reader: csv::Reader<BufReader<File>>,
         pub accelerometer_reader_start: Option<csv::Position>,
-        pub gps_reader: csv::Reader<std::io::BufReader<std::fs::File>>,
+        pub gps_reader: csv::Reader<BufReader<File>>,
         pub gps_reader_start: Option<csv::Position>,
     }
+
+    /// Async reading state of the file data source
     pub struct ReadingAsync {
-        pub accelerometer_reader: AsyncReader<tokio::io::BufReader<tokio::fs::File>>,
-        pub gps_reader: AsyncReader<tokio::io::BufReader<tokio::fs::File>>,
-        pub accelerometer_reader_start: Option<()>,
-        pub gps_reader_start: Option<()>,
+        pub accelerometer_reader: AsyncReader<AsyncBufReader<AsyncFile>>,
+        pub gps_reader: AsyncReader<AsyncBufReader<AsyncFile>>,
+        pub accelerometer_reader_start: bool,
+        pub gps_reader_start: bool,
     }
 }
 
@@ -84,18 +93,18 @@ impl FileDatasource<state::New> {
             ..
         } = self;
 
-        let accelerometer_reader = csv_async::AsyncReader::from_reader(tokio::io::BufReader::new(
-            tokio::fs::File::open(accelerometer_filename.as_ref()).await?,
+        let accelerometer_reader = csv_async::AsyncReader::from_reader(AsyncBufReader::new(
+            AsyncFile::open(accelerometer_filename.as_ref()).await?,
         ));
-        let gps_reader = csv_async::AsyncReader::from_reader(tokio::io::BufReader::new(
-            tokio::fs::File::open(gps_filename.as_ref()).await?,
+        let gps_reader = csv_async::AsyncReader::from_reader(AsyncBufReader::new(
+            AsyncFile::open(gps_filename.as_ref()).await?,
         ));
         Ok(FileDatasource {
             state: state::ReadingAsync {
                 accelerometer_reader,
                 gps_reader,
-                accelerometer_reader_start: None,
-                gps_reader_start: None,
+                accelerometer_reader_start: false,
+                gps_reader_start: false,
             },
             accelerometer_filename,
             gps_filename,
@@ -196,8 +205,8 @@ impl FileDatasource<state::ReadingAsync> {
             let accelerometer: Option<_> = accelerometer_reader
                 .records()
                 .also(|_| {
-                    if accelerometer_reader_start.is_none() {
-                        *accelerometer_reader_start = Some(());
+                    if !*accelerometer_reader_start {
+                        *accelerometer_reader_start = true;
                     }
                 })
                 .next()
@@ -206,8 +215,8 @@ impl FileDatasource<state::ReadingAsync> {
             let gps: Option<_> = gps_reader
                 .records()
                 .also(|_| {
-                    if gps_reader_start.is_none() {
-                        *gps_reader_start = Some(());
+                    if !*gps_reader_start {
+                        *gps_reader_start = true;
                     }
                 })
                 .next()
@@ -227,7 +236,7 @@ impl FileDatasource<state::ReadingAsync> {
                 )),
                 None => {
                     tracing::debug!("Seeking to the beginning of the files");
-                    if accelerometer_reader_start.is_none() || gps_reader_start.is_none() {
+                    if !*accelerometer_reader_start || !*gps_reader_start {
                         bail!("Unable to seek to the beginning of the files: start positions are not set")
                     }
 

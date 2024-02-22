@@ -4,6 +4,7 @@ pub mod config;
 pub mod domain;
 pub mod file_datasource;
 
+/// A trait for applying Kotlin-like convenience methods to types.
 pub trait KtConvenience: Sized {
     #[inline]
     fn apply(mut self, f: impl FnOnce(&mut Self)) -> Self {
@@ -38,8 +39,11 @@ pub trait KtConvenience: Sized {
     }
 }
 
+// Implement the trait for all types.
 impl<T> KtConvenience for T {}
 
+/// A macro for cloning variables. Useful for moving
+/// variables into closures, like `Rc` or `Arc`.
 #[macro_export]
 macro_rules! reclone {
     ($($v:ident),+ $(,)?) => {
@@ -49,6 +53,7 @@ macro_rules! reclone {
     }
 }
 
+/// Struct, used for logging to both file and stdout.
 pub struct FileStdoutWriter {
     file: RollingFileAppender,
 }

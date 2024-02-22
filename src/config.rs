@@ -25,14 +25,11 @@ impl Configuration {
         let config = config::Config::builder()
             .add_source(config::File::from(config_dir.join("base")).required(true))
             .add_source({
-                let environment: Environment = std::env::var("APP_ENVIRONMENT")
-                    .as_deref()
-                    .unwrap_or("local")
-                    .parse()?;
+                let environment: Environment = std::env::var("APP_ENVIRONMENT")?.parse()?;
                 config::File::from(config_dir.join(environment.as_str())).required(true)
             })
             .build()?;
-        config.try_deserialize::<'_, Self>().map_err(Into::into)
+        config.try_deserialize().map_err(Into::into)
     }
 
     pub fn mqtt(&self) -> &Mqtt {
