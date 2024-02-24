@@ -9,8 +9,8 @@ services:
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
     ports:
-      - 1883:1883
-      - 9001:9001
+      - "1883:1883"
+      - "9001:9001"
     networks:
       mqtt_network:
 
@@ -22,7 +22,6 @@ services:
     volumes:
       - ./agent/log:/app/log
     environment:
-      APP_ENVIRONMENT: production
       RUST_BACKTRACE: 1
       RUST_LOG: DEBUG
     networks:

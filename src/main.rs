@@ -25,11 +25,6 @@ async fn main() -> Result<()> {
             .with_thread_ids(true),
     )?;
 
-    tracing::info!(
-        "Available parallelism: {:?}",
-        std::thread::available_parallelism().ok()
-    );
-
     let config = Configuration::try_read()?;
     let client = connect_mqtt(config.mqtt().to_owned()).await?;
 

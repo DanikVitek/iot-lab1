@@ -23,4 +23,5 @@ RUN apt-get update -y \
 COPY --from=builder /app/target/release/lab1 lab1
 COPY configuration configuration
 COPY data data
+ENV APP_ENVIRONMENT production
 ENTRYPOINT [ "./lab1" ]
